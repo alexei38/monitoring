@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package protobuf;
+option go_package = "./;proto";
+
+service StreamService {
+  rpc FetchResponse (ClientRequest) returns (stream Metrics) {}
+}
+
+message ClientRequest {
+  int32 interval = 1;
+  int32 counter = 2;
+}
+
+message Metrics {
+  repeated CPUMetric CPU = 1;
+  LoadMetric load = 2;
+}
+
+message CPUMetric {
+  string CPU = 1;
+  float user = 2;
+  float system = 3;
+  float idle = 4;
+}
+
+message LoadMetric {
+  float load1 = 1;
+  float load5 = 2;
+  float load15 = 3;
+}

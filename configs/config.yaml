@@ -1,0 +1,4 @@
+---
+metrics:
+  cpu: true
+  load: true
