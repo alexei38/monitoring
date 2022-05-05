@@ -84,7 +84,6 @@ func drawCPUTable(metrics []*pb.CPUMetric) {
 			"idle":   metric.Idle,
 		}
 	}
-	// cpuCount := len(metrics)
 	table := widgets.NewTable()
 	table.Title = "CPU Load"
 	table.Rows = [][]string{header}

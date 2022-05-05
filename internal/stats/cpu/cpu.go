@@ -30,27 +30,35 @@ type Stats struct {
 	CPU []Stat
 }
 
-func GetStat() (*Stats, error) {
+func (s *Stats) Get() error {
+	s.clear()
 	mstat := &mpStat{}
-	result := &Stats{}
-	var stdout, stderr bytes.Buffer
-	cmd := exec.Command("mpstat", "-P", "ALL", "-o", "JSON")
+	var stdout bytes.Buffer
+	cmd := exec.Command("mpstat", "-P", "ALL", "1", "1", "-o", "JSON")
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed run mpstat: %w", err)
+		return fmt.Errorf("failed run mpstat: %w", err)
 	}
 	if err := json.Unmarshal(stdout.Bytes(), mstat); err != nil {
-		return nil, fmt.Errorf("failed parse mpstat output: %w", err)
+		return fmt.Errorf("failed parse mpstat output: %w", err)
 	}
 	if len(mstat.Sysstat.Hosts) < 1 {
-		return nil, fmt.Errorf("mpstat data not found. check mpstat -P ALL")
+		return fmt.Errorf("mpstat data not found. check mpstat -P ALL")
 	}
 	if len(mstat.Sysstat.Hosts) > 1 {
-		return nil, fmt.Errorf("unsuported multiple hosts")
+		return fmt.Errorf("unsuported multiple hosts")
 	}
-	for _, s := range mstat.Sysstat.Hosts[0].Statistics {
-		result.CPU = append(result.CPU, s.CPULoad...)
+	for _, res := range mstat.Sysstat.Hosts[0].Statistics {
+		s.CPU = append(s.CPU, res.CPULoad...)
 	}
-	return result, nil
+	return nil
+}
+
+func (s *Stats) clear() {
+	s.CPU = []Stat{}
+}
+
+func NewStat() *Stats {
+	stat := &Stats{}
+	return stat
 }

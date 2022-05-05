@@ -10,8 +10,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// avgCPU получает все элементы из storage,
+// по каждому типу (sys, usr, idle) всех элементов вычисляет среднее число
+// в результате отдает один элемент cpu.Stats со средними числами всех элементов.
 func avgCPU(store memory.Storage) *cpu.Stats {
-	// stats[cpuID][sys|usr|idle][10.2, 13.3, 15.6]
 	stats := map[string]map[string][]float32{}
 	for _, item := range store.List() {
 		stat := item.Value.(*cpu.Stats)
@@ -42,11 +44,16 @@ func avgCPU(store memory.Storage) *cpu.Stats {
 	return result
 }
 
+// AvgStat каждую секунду собирает статистику по утилизации CPU%,
+// сохраняет в storage метрику, если метрик >= counter, то удаляет самую старую
+// Как только накопилось количество метрик == counter,
+// то пишем в канал statCh среднее значение всех сохраненных метрик.
 func AvgStat(ctx context.Context, statCh chan<- *cpu.Stats, interval int, counter int) {
 	var iter int
 	store := memory.NewStorage()
 	countErrors := 0
 	tickerSec := time.NewTicker(time.Second)
+	stat := cpu.NewStat()
 	for {
 		select {
 		case <-ctx.Done():
@@ -57,19 +64,25 @@ func AvgStat(ctx context.Context, statCh chan<- *cpu.Stats, interval int, counte
 		case <-ctx.Done():
 			return
 		case <-tickerSec.C:
-			laStat, err := cpu.GetStat()
+			err := stat.Get()
 			if err != nil {
-				log.Errorf("failed get cpu statistic: %v", err)
 				countErrors++
-				if countErrors >= monitor.MaxErrors {
+				if countErrors >= monitor.MaxErrors && store.Len() > 0 {
+					// todo wrap msg
+					log.Errorf("send cpu metrics with failed failed get cpu statistic: %v", err)
 					statCh <- avgCPU(store)
+				} else {
+					log.Errorf("failed get cpu statistic: %v", err)
 				}
 				continue
+			} else {
+				// как получили успешно метрику, сбрасываем счетчик
+				countErrors = 0
 			}
 			if store.Len() >= counter && store.Len() > 0 {
 				store.Remove(store.Back())
 			}
-			store.PushFront(laStat)
+			store.PushFront(stat)
 			if store.Len() >= counter-interval {
 				if iter == interval {
 					statCh <- avgCPU(store)
