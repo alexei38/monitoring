@@ -39,11 +39,3 @@ jobs:
 
       - name: Build binary
         run: make build
-
-      - name: archive artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: dist-without-markdown
-          path: |
-            bin
-            README.md
