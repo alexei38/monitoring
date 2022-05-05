@@ -32,6 +32,7 @@ func AvgStat(ctx context.Context, statCh chan<- *load.Stats, interval int, count
 	store := memory.NewStorage()
 	countErrors := 0
 	tickerSec := time.NewTicker(time.Second)
+	stat := load.NewStat()
 	for {
 		select {
 		case <-ctx.Done():
@@ -42,7 +43,7 @@ func AvgStat(ctx context.Context, statCh chan<- *load.Stats, interval int, count
 		case <-ctx.Done():
 			return
 		case <-tickerSec.C:
-			laStat, err := load.GetStat()
+			err := stat.Get()
 			if err != nil {
 				log.Errorf("failed get loadaverage: %v", err)
 				countErrors++
@@ -50,11 +51,13 @@ func AvgStat(ctx context.Context, statCh chan<- *load.Stats, interval int, count
 					statCh <- avgLoad(store)
 				}
 				continue
+			} else {
+				countErrors = 0
 			}
 			if store.Len() >= counter && store.Len() > 0 {
 				store.Remove(store.Back())
 			}
-			store.PushFront(laStat)
+			store.PushFront(stat)
 			if store.Len() >= counter-interval {
 				if iter == interval {
 					statCh <- avgLoad(store)

@@ -16,11 +16,10 @@ type Stats struct {
 	Load15 float32
 }
 
-func GetStat() (*Stats, error) {
-	stat := &Stats{}
+func (s *Stats) Get() error {
 	f, err := os.Open(loadAveragePath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
@@ -29,14 +28,19 @@ func GetStat() (*Stats, error) {
 		count, err := fmt.Sscanf(
 			line,
 			"%f %f %f",
-			&stat.Load1, &stat.Load5, &stat.Load15,
+			&s.Load1, &s.Load5, &s.Load15,
 		)
 		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("failed parse %s. line: %q err: %w", loadAveragePath, line, err)
+			return fmt.Errorf("failed parse %s. line: %q err: %w", loadAveragePath, line, err)
 		}
 		if count == 0 {
-			return nil, fmt.Errorf("failed parse %s. line: %q", loadAveragePath, line)
+			return fmt.Errorf("failed parse %s. line: %q", loadAveragePath, line)
 		}
 	}
-	return stat, nil
+	return nil
+}
+
+func NewStat() *Stats {
+	stat := &Stats{}
+	return stat
 }
