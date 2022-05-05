@@ -82,7 +82,8 @@ func sendCPUStat(ctx context.Context, cancel context.CancelFunc, cpuCh <-chan *c
 }
 
 func (s server) FetchResponse(client *pb.ClientRequest, srv pb.StreamService_FetchResponseServer) error {
-	log.Printf("fetch response. Interval: %d, counter: %d", client.Interval, client.Counter)
+	log.WithField("interval", client.Interval).WithField("counter", client.Counter)
+	log.Info("Client connected")
 	wg := &sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -136,7 +137,7 @@ func Run() error {
 	s := grpc.NewServer()
 	pb.RegisterStreamServiceServer(s, server{config: cfg})
 
-	log.Println("start server")
+	log.Println("Start grpc server")
 	if err := s.Serve(lis); err != nil {
 		return fmt.Errorf("failed to serve: %w", err)
 	}

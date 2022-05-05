@@ -23,7 +23,7 @@ build-img:
 		-f build/Dockerfile .
 
 run-img: build-img
-	docker run -p 9080:9080 $(DOCKER_IMG)
+	docker run --net host $(DOCKER_IMG)
 
 version: build
 	$(BIN) --version
