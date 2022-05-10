@@ -12,7 +12,7 @@ import (
 	"go.uber.org/goleak"
 )
 
-func Disable_TestCPUMetric(t *testing.T) {
+func TestCPUMetric(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	counter := 1
 	interval := 1

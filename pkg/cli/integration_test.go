@@ -37,6 +37,34 @@ func (m *Metrics) Len() int32 {
 	return m.cpuMetrics + m.loadMetrics
 }
 
+func getEvent(ctx context.Context, metrics *Metrics, stream pb.StreamService_FetchResponseClient) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			resp, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			if e, ok := status.FromError(err); ok {
+				// пропускаем линтер, нам не нужно обрабатывать другие ошибки в этом месте
+				switch e.Code() { // nolint: exhaustive
+				case codes.Canceled, codes.Unavailable:
+					// ctx.Done
+					return nil
+				}
+			}
+			if err != nil {
+				return err
+			}
+			metrics.Append(resp)
+		}
+	}
+}
+
+// пропускаем линтер, т.к нет необходимости в t.Cleanup
+// nolint: tparallel
 func TestGRPCMetrics(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	tests := []struct {
@@ -92,10 +120,9 @@ func TestGRPCMetrics(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			tc := tc
 			t.Parallel()
-
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -110,33 +137,20 @@ func TestGRPCMetrics(t *testing.T) {
 			stream, err := client.MonitoringClient(ctx, lis.Addr().String(), interval, counter)
 			require.NoError(t, err)
 
-			metrics := Metrics{}
+			metrics := &Metrics{}
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						resp, err := stream.Recv()
-						if errors.Is(err, io.EOF) {
-							return
-						}
-						if e, ok := status.FromError(err); ok {
-							switch e.Code() {
-							case codes.Canceled, codes.Unavailable:
-								// ctx.Done
-								return
-							}
-						}
-						require.NoError(t, err)
-						metrics.Append(resp)
-					}
-				}
+				err := getEvent(ctx, metrics, stream)
+				require.NoError(t, err)
 			}()
 			// Время с запасом несколько секунд и ждем пока наберем нужное количество ответов (count)
-			repeatCheck := time.Second * time.Duration(interval+2) * time.Duration(tc.count)
+			repeatCheck := time.Second * time.Duration(interval+2)
+			if tc.count > 0 {
+				// если у нас 0 метрик, то подождем хотя бы пару секунд,
+				// чтобы Eventually завершил работу корректно
+				repeatCheck *= time.Duration(tc.count)
+			}
 			require.Eventually(t, func() bool {
 				// Проверка, что каждой метрики набрали по количеству count
 				var results []bool

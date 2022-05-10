@@ -124,7 +124,7 @@ func (s server) FetchResponse(client *pb.ClientRequest, srv pb.StreamService_Fet
 	return nil
 }
 
-func MonitoringServer(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup, cfg *config.Config) (net.Listener, error) {
+func MonitoringServer(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup, cfg *config.Config) (net.Listener, error) { // nolint:lll
 	// start server
 	hostPort := net.JoinHostPort(cfg.Listen.Host, cfg.Listen.Port)
 	lis, err := net.Listen("tcp", hostPort)

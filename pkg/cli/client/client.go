@@ -133,7 +133,7 @@ func drawCPUTable(metrics []*pb.CPUMetric) {
 	ui.Render(table)
 }
 
-func MonitoringClient(ctx context.Context, hostPort string, interval, counter int32) (pb.StreamService_FetchResponseClient, error) {
+func MonitoringClient(ctx context.Context, hostPort string, interval, counter int32) (pb.StreamService_FetchResponseClient, error) { // nolint:lll
 	credentials := grpc.WithTransportCredentials(insecure.NewCredentials())
 	conn, err := grpc.DialContext(ctx, hostPort, credentials)
 	if err != nil {
@@ -141,8 +141,8 @@ func MonitoringClient(ctx context.Context, hostPort string, interval, counter in
 		return nil, fmt.Errorf("failed connect to server %s: %w", hostPort, err)
 	}
 	go func() {
+		defer conn.Close()
 		<-ctx.Done()
-		conn.Close()
 	}()
 	client := pb.NewStreamServiceClient(conn)
 
@@ -151,5 +151,4 @@ func MonitoringClient(ctx context.Context, hostPort string, interval, counter in
 		Counter:  counter,
 	}
 	return client.FetchResponse(ctx, in)
-
 }

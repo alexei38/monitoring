@@ -27,10 +27,9 @@ func avgLoad(store memory.Storage) *load.Stats {
 	return result
 }
 
-func AvgStat(ctx context.Context, statCh chan<- *load.Stats, interval int, counter int) {
+func AvgStat(ctx context.Context, ch chan<- *load.Stats, interval int, counter int) {
 	var iter int
 	store := memory.NewStorage()
-	countErrors := 0
 	tickerSec := time.NewTicker(time.Second)
 	stat := load.NewStat()
 	for {
@@ -46,13 +45,10 @@ func AvgStat(ctx context.Context, statCh chan<- *load.Stats, interval int, count
 			err := stat.Get()
 			if err != nil {
 				log.Errorf("failed get loadaverage: %v", err)
-				countErrors++
-				if countErrors >= monitor.MaxErrors {
-					statCh <- avgLoad(store)
+				if store.Len() >= counter {
+					ch <- avgLoad(store)
 				}
 				continue
-			} else {
-				countErrors = 0
 			}
 			if store.Len() >= counter && store.Len() > 0 {
 				store.Remove(store.Back())
@@ -61,7 +57,7 @@ func AvgStat(ctx context.Context, statCh chan<- *load.Stats, interval int, count
 			if store.Len() >= counter-interval {
 				if iter == interval {
 					select {
-					case statCh <- avgLoad(store):
+					case ch <- avgLoad(store):
 						break
 					case <-ctx.Done():
 						log.Warning("Cancel send load average metric")

@@ -12,7 +12,7 @@ import (
 	"go.uber.org/goleak"
 )
 
-func Disable_TestCPUMetric(t *testing.T) {
+func TestCPUMetric(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	counter := 1
 	interval := 1
@@ -27,11 +27,8 @@ func Disable_TestCPUMetric(t *testing.T) {
 		mcpu.AvgStat(ctx, statCh, interval, counter)
 	}()
 
-	var stat *scpu.Stats
-	select {
-	case stat = <-statCh:
-		cancel()
-	}
+	stat := <-statCh
+	cancel()
 	wg.Wait()
 
 	require.NotNil(t, stat)

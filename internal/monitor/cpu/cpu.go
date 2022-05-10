@@ -47,36 +47,26 @@ func avgCPU(store memory.Storage) *cpu.Stats {
 // сохраняет в storage метрику, если метрик >= counter, то удаляет самую старую
 // Как только накопилось количество метрик == counter,
 // то пишем в канал statCh среднее значение всех сохраненных метрик.
-func AvgStat(ctx context.Context, statCh chan<- *cpu.Stats, interval int, counter int) {
+func AvgStat(ctx context.Context, ch chan<- *cpu.Stats, interval int, counter int) {
 	var iter int
 	store := memory.NewStorage()
-	countErrors := 0
 	stat := cpu.NewStat()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-		}
-		select {
-		case <-ctx.Done():
-			return
-		default:
 			err := stat.Get()
 			if err != nil {
-				countErrors++
-				if countErrors >= monitor.MaxErrors && store.Len() > 0 {
-					// todo wrap msg
+				if store.Len() >= counter {
 					log.Errorf("send cpu metrics with failed failed get cpu statistic: %v", err)
-					statCh <- avgCPU(store)
+					ch <- avgCPU(store)
 				} else {
 					log.Errorf("failed get cpu statistic: %v", err)
 				}
 				continue
-			} else {
-				// как получили успешно метрику, сбрасываем счетчик
-				countErrors = 0
 			}
+
 			if store.Len() >= counter && store.Len() > 0 {
 				store.Remove(store.Back())
 			}
@@ -84,7 +74,7 @@ func AvgStat(ctx context.Context, statCh chan<- *cpu.Stats, interval int, counte
 			if store.Len() >= counter-interval {
 				if iter == interval {
 					select {
-					case statCh <- avgCPU(store):
+					case ch <- avgCPU(store):
 						break
 					case <-ctx.Done():
 						log.Warning("Cancel send cpu load metric")
