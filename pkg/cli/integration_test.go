@@ -1,0 +1,162 @@
+package integration_test
+
+import (
+	"context"
+	"errors"
+	"io"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/alexei38/monitoring/internal/config"
+	pb "github.com/alexei38/monitoring/internal/grpc"
+	"github.com/alexei38/monitoring/pkg/cli/client"
+	"github.com/alexei38/monitoring/pkg/cli/server"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+type Metrics struct {
+	cpuMetrics  int32
+	loadMetrics int32
+}
+
+func (m *Metrics) Append(item *pb.Metrics) {
+	switch {
+	case item.CPU != nil:
+		atomic.AddInt32(&m.cpuMetrics, 1)
+	case item.Load != nil:
+		atomic.AddInt32(&m.loadMetrics, 1)
+	}
+}
+
+func (m *Metrics) Len() int32 {
+	return m.cpuMetrics + m.loadMetrics
+}
+
+func TestGRPCMetrics(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	tests := []struct {
+		name   string
+		cfg    *config.Config
+		count  int32
+		expect int32
+	}{
+		{
+			name: "all metrics",
+			cfg: &config.Config{
+				Listen: config.ListenConfig{
+					Host: "127.0.0.1",
+					Port: "0",
+				},
+				Metrics: config.Metrics{
+					CPU:  true,
+					Load: true,
+				},
+			},
+			count:  2,
+			expect: 4, // каждой метрики по 2
+		},
+		{
+			name: "load metric only",
+			cfg: &config.Config{
+				Listen: config.ListenConfig{
+					Host: "127.0.0.1",
+					Port: "0",
+				},
+				Metrics: config.Metrics{
+					CPU:  false,
+					Load: true,
+				},
+			},
+			count:  2,
+			expect: 2, // только load метрики - 2
+		},
+		{
+			name: "no metrics",
+			cfg: &config.Config{
+				Listen: config.ListenConfig{
+					Host: "127.0.0.1",
+					Port: "0",
+				},
+				Metrics: config.Metrics{
+					CPU:  false,
+					Load: false,
+				},
+			},
+			count:  0,
+			expect: 0, // не должны набрать ни одной метрики
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc := tc
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			// Раз в interval секунд, получать агрегированную метрику за counter метрик
+			var interval int32 = 1
+			var counter int32 = 2
+
+			wg := &sync.WaitGroup{}
+			lis, err := server.MonitoringServer(ctx, cancel, wg, tc.cfg)
+			require.NoError(t, err)
+
+			stream, err := client.MonitoringClient(ctx, lis.Addr().String(), interval, counter)
+			require.NoError(t, err)
+
+			metrics := Metrics{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						resp, err := stream.Recv()
+						if errors.Is(err, io.EOF) {
+							return
+						}
+						if e, ok := status.FromError(err); ok {
+							switch e.Code() {
+							case codes.Canceled, codes.Unavailable:
+								// ctx.Done
+								return
+							}
+						}
+						require.NoError(t, err)
+						metrics.Append(resp)
+					}
+				}
+			}()
+			// Время с запасом несколько секунд и ждем пока наберем нужное количество ответов (count)
+			repeatCheck := time.Second * time.Duration(interval+2) * time.Duration(tc.count)
+			require.Eventually(t, func() bool {
+				// Проверка, что каждой метрики набрали по количеству count
+				var results []bool
+				if tc.cfg.Metrics.CPU {
+					results = append(results, atomic.LoadInt32(&metrics.cpuMetrics) == tc.count)
+				}
+				if tc.cfg.Metrics.Load {
+					results = append(results, atomic.LoadInt32(&metrics.loadMetrics) == tc.count)
+				}
+				for _, result := range results {
+					if !result {
+						return false
+					}
+				}
+				return true
+			}, repeatCheck, time.Millisecond*10)
+			cancel()
+			wg.Wait()
+
+			require.Equal(t, metrics.Len(), tc.expect)
+		})
+	}
+}

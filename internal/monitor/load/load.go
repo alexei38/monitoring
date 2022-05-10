@@ -60,7 +60,13 @@ func AvgStat(ctx context.Context, statCh chan<- *load.Stats, interval int, count
 			store.PushFront(stat)
 			if store.Len() >= counter-interval {
 				if iter == interval {
-					statCh <- avgLoad(store)
+					select {
+					case statCh <- avgLoad(store):
+						break
+					case <-ctx.Done():
+						log.Warning("Cancel send load average metric")
+						return
+					}
 					iter = 0
 				}
 				iter++

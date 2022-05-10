@@ -1,6 +1,6 @@
 # Системный мониторинг
 
-![CI](https://github.com/alexei38/monitoring/actions/workflows/build.yml/badge.svg?branch=monitoring)
+![GitHub CI](https://github.com/alexei38/monitoring/actions/workflows/build.yml/badge.svg?branch=monitoring)
 
 Программа, предназначена для сбора агрегированной статистики с сервера и отправки клиенту по протоколу GRPC  
 

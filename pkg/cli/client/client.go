@@ -38,7 +38,34 @@ func Run() error {
 			}
 		}
 	}()
-	return client(ctx, cancel)
+	host := viper.GetString("clientHost")
+	port := viper.GetString("clientPort")
+	interval := viper.GetInt32("interval")
+	counter := viper.GetInt32("counter")
+	hostPort := net.JoinHostPort(host, port)
+	stream, err := MonitoringClient(ctx, hostPort, interval, counter)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for {
+			resp, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				log.Info("connection closed")
+				cancel()
+				return
+			}
+			if err != nil {
+				log.Errorf("cannot receive %v", err)
+				cancel()
+				return
+			}
+			drawLoadTable(resp.Load)
+			drawCPUTable(resp.CPU)
+		}
+	}()
+	<-ctx.Done()
+	return nil
 }
 
 func drawLoadTable(metrics *pb.LoadMetric) {
@@ -106,47 +133,23 @@ func drawCPUTable(metrics []*pb.CPUMetric) {
 	ui.Render(table)
 }
 
-func client(ctx context.Context, cancel context.CancelFunc) error {
-	host := viper.GetString("clientHost")
-	port := viper.GetString("clientPort")
-	interval := viper.GetInt32("interval")
-	counter := viper.GetInt32("counter")
-
-	hostPort := net.JoinHostPort(host, port)
+func MonitoringClient(ctx context.Context, hostPort string, interval, counter int32) (pb.StreamService_FetchResponseClient, error) {
 	credentials := grpc.WithTransportCredentials(insecure.NewCredentials())
-	conn, err := grpc.Dial(hostPort, credentials)
+	conn, err := grpc.DialContext(ctx, hostPort, credentials)
 	if err != nil {
-		cancel()
-		return fmt.Errorf("failed connect to server %s: %w", hostPort, err)
+		fmt.Println(err)
+		return nil, fmt.Errorf("failed connect to server %s: %w", hostPort, err)
 	}
+	go func() {
+		<-ctx.Done()
+		conn.Close()
+	}()
 	client := pb.NewStreamServiceClient(conn)
 
 	in := &pb.ClientRequest{
 		Interval: interval,
 		Counter:  counter,
 	}
-	stream, err := client.FetchResponse(context.Background(), in)
-	if err != nil {
-		cancel()
-		return fmt.Errorf("open stream error: %w", err)
-	}
-	go func() {
-		for {
-			resp, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
-				log.Info("connection closed")
-				cancel()
-				return
-			}
-			if err != nil {
-				log.Errorf("cannot receive %v", err)
-				cancel()
-				return
-			}
-			drawLoadTable(resp.Load)
-			drawCPUTable(resp.CPU)
-		}
-	}()
-	<-ctx.Done()
-	return nil
+	return client.FetchResponse(ctx, in)
+
 }

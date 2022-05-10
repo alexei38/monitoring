@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	"github.com/alexei38/monitoring/internal/config"
 	pb "github.com/alexei38/monitoring/internal/grpc"
@@ -121,25 +124,60 @@ func (s server) FetchResponse(client *pb.ClientRequest, srv pb.StreamService_Fet
 	return nil
 }
 
+func MonitoringServer(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup, cfg *config.Config) (net.Listener, error) {
+	// start server
+	hostPort := net.JoinHostPort(cfg.Listen.Host, cfg.Listen.Port)
+	lis, err := net.Listen("tcp", hostPort)
+	if err != nil {
+		return nil, err
+	}
+	gSrv := grpc.NewServer()
+	srv := server{config: cfg}
+	pb.RegisterStreamServiceServer(gSrv, srv)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer cancel()
+		gSrv.Serve(lis)
+	}()
+
+	// graceful shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case s := <-sigCh:
+			cancel()
+			log.Infof("got signal %v, attempting graceful shutdown", s)
+			break
+		case <-ctx.Done():
+			log.Infof("cancel context, stop server")
+			break
+		}
+		gSrv.GracefulStop()
+	}()
+	return lis, nil
+}
+
 func Run() error {
 	cfg, err := config.NewConfig()
 	if err != nil {
 		return fmt.Errorf("failed read config file: %w", err)
 	}
-	log.Info("Monitoring server started")
 
-	hostPort := net.JoinHostPort(cfg.Listen.Host, cfg.Listen.Port)
-	lis, err := net.Listen("tcp", hostPort)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	wg := &sync.WaitGroup{}
+
+	lis, err := MonitoringServer(ctx, cancel, wg, cfg)
 	if err != nil {
-		return fmt.Errorf("failed to listen: %w", err)
+		return fmt.Errorf("failed start server: %w", err)
 	}
 
-	s := grpc.NewServer()
-	pb.RegisterStreamServiceServer(s, server{config: cfg})
-
-	log.Println("Start grpc server")
-	if err := s.Serve(lis); err != nil {
-		return fmt.Errorf("failed to serve: %w", err)
-	}
+	log.Infof("server started on %s", lis.Addr())
+	wg.Wait()
 	return nil
 }

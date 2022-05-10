@@ -2,7 +2,6 @@ package cpu
 
 import (
 	"context"
-	"time"
 
 	"github.com/alexei38/monitoring/internal/monitor"
 	"github.com/alexei38/monitoring/internal/stats/cpu"
@@ -52,7 +51,6 @@ func AvgStat(ctx context.Context, statCh chan<- *cpu.Stats, interval int, counte
 	var iter int
 	store := memory.NewStorage()
 	countErrors := 0
-	tickerSec := time.NewTicker(time.Second)
 	stat := cpu.NewStat()
 	for {
 		select {
@@ -63,7 +61,7 @@ func AvgStat(ctx context.Context, statCh chan<- *cpu.Stats, interval int, counte
 		select {
 		case <-ctx.Done():
 			return
-		case <-tickerSec.C:
+		default:
 			err := stat.Get()
 			if err != nil {
 				countErrors++
@@ -85,7 +83,13 @@ func AvgStat(ctx context.Context, statCh chan<- *cpu.Stats, interval int, counte
 			store.PushFront(stat)
 			if store.Len() >= counter-interval {
 				if iter == interval {
-					statCh <- avgCPU(store)
+					select {
+					case statCh <- avgCPU(store):
+						break
+					case <-ctx.Done():
+						log.Warning("Cancel send cpu load metric")
+						return
+					}
 					iter = 0
 				}
 				iter++
