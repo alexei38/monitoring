@@ -11,98 +11,41 @@ import (
 
 	"github.com/alexei38/monitoring/internal/config"
 	pb "github.com/alexei38/monitoring/internal/grpc"
+	"github.com/alexei38/monitoring/internal/logger"
 	mcpu "github.com/alexei38/monitoring/internal/monitor/cpu"
+	miostat "github.com/alexei38/monitoring/internal/monitor/iostat"
 	mload "github.com/alexei38/monitoring/internal/monitor/load"
 	"github.com/alexei38/monitoring/internal/stats/cpu"
+	"github.com/alexei38/monitoring/internal/stats/iostat"
 	"github.com/alexei38/monitoring/internal/stats/load"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 )
 
 type server struct {
+	ctx    context.Context
+	cancel context.CancelFunc
 	config *config.Config
 	pb.UnimplementedStreamServiceServer
 }
 
-// Пропускаем линтер, т.к. длинные имена аргументов у grpc
-// nolint:lll
-func sendLoadStat(ctx context.Context, cancel context.CancelFunc, loadCh <-chan *load.Stats, srv pb.StreamService_FetchResponseServer) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case loadStat := <-loadCh:
-			metrics := pb.Metrics{
-				Load: &pb.LoadMetric{
-					Load1:  loadStat.Load1,
-					Load5:  loadStat.Load5,
-					Load15: loadStat.Load15,
-				},
-			}
-			if err := srv.Send(&metrics); err != nil {
-				log.Info("Connection closed")
-				cancel()
-				return
-			}
-		}
-	}
-}
-
-// Пропускаем линтер, т.к. длинные имена аргументов у grpc
-// nolint:lll
-func sendCPUStat(ctx context.Context, cancel context.CancelFunc, cpuCh <-chan *cpu.Stats, srv pb.StreamService_FetchResponseServer) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case cpuStats := <-cpuCh:
-			metrics := pb.Metrics{}
-			for _, cpuStat := range cpuStats.CPU {
-				metrics.CPU = append(metrics.CPU, &pb.CPUMetric{
-					CPU:    cpuStat.CPU,
-					User:   cpuStat.Usr,
-					System: cpuStat.Sys,
-					Idle:   cpuStat.Idle,
-				})
-			}
-			if err := srv.Send(&metrics); err != nil {
-				log.Info("Connection closed")
-				cancel()
-				return
-			}
-		}
-	}
-}
-
-func (s server) FetchResponse(client *pb.ClientRequest, srv pb.StreamService_FetchResponseServer) error {
+func (s *server) FetchResponse(client *pb.ClientRequest, srv pb.StreamService_FetchResponseServer) error {
 	log.WithField("interval", client.Interval).WithField("counter", client.Counter)
 	log.Info("Client connected")
 	wg := &sync.WaitGroup{}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	if s.config.Metrics.Load {
-		loadCh := make(chan *load.Stats)
-		defer close(loadCh)
+	if s.config.Metrics.IO {
+		ioCh := make(chan *iostat.Stats)
+		defer close(ioCh)
 
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			mload.AvgStat(ctx, loadCh, int(client.Interval), int(client.Counter))
+			miostat.AvgStat(s.ctx, ioCh, int(client.Interval), int(client.Counter))
 		}()
 		go func() {
 			defer wg.Done()
-			sendLoadStat(ctx, cancel, loadCh, srv)
+			sendIOStat(s.ctx, ioCh, srv)
 		}()
 	}
 
@@ -113,11 +56,26 @@ func (s server) FetchResponse(client *pb.ClientRequest, srv pb.StreamService_Fet
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			mcpu.AvgStat(ctx, cpuCh, int(client.Interval), int(client.Counter))
+			mcpu.AvgStat(s.ctx, cpuCh, int(client.Interval), int(client.Counter))
 		}()
 		go func() {
 			defer wg.Done()
-			sendCPUStat(ctx, cancel, cpuCh, srv)
+			sendCPUStat(s.ctx, cpuCh, srv)
+		}()
+	}
+
+	if s.config.Metrics.Load {
+		loadCh := make(chan *load.Stats)
+		defer close(loadCh)
+
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			mload.AvgStat(s.ctx, loadCh, int(client.Interval), int(client.Counter))
+		}()
+		go func() {
+			defer wg.Done()
+			sendLoadStat(s.ctx, loadCh, srv)
 		}()
 	}
 	wg.Wait()
@@ -132,31 +90,34 @@ func MonitoringServer(ctx context.Context, cancel context.CancelFunc, wg *sync.W
 		return nil, err
 	}
 	gSrv := grpc.NewServer()
-	srv := server{config: cfg}
+	srv := &server{config: cfg, ctx: ctx, cancel: cancel}
 	pb.RegisterStreamServiceServer(gSrv, srv)
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		defer cancel()
-		gSrv.Serve(lis)
+		err := gSrv.Serve(lis)
+		if err != nil {
+			log.Errorf("Server stoped with error %v", err)
+		}
 	}()
 
 	// graceful shutdown
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	exit := make(chan os.Signal, 1)
+	signal.Notify(exit, os.Interrupt, syscall.SIGTERM)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		select {
-		case s := <-sigCh:
-			cancel()
-			log.Infof("got signal %v, attempting graceful shutdown", s)
+		case s := <-exit:
+			log.Debugf("got signal %v, attempting graceful shutdown", s)
 			break
 		case <-ctx.Done():
-			log.Infof("cancel context, stop server")
+			log.Debug("parent context done")
 			break
 		}
+		cancel()
+		log.Infof("Gracefull stopping server")
 		gSrv.GracefulStop()
 	}()
 	return lis, nil
@@ -167,17 +128,20 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("failed read config file: %w", err)
 	}
+	err = logger.New(cfg.Logger)
+	if err != nil {
+		return fmt.Errorf("failed initialize logger: %v", err)
+	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	wg := &sync.WaitGroup{}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	lis, err := MonitoringServer(ctx, cancel, wg, cfg)
 	if err != nil {
 		return fmt.Errorf("failed start server: %w", err)
 	}
 
-	log.Infof("server started on %s", lis.Addr())
+	log.Infof("server started on %s", lis.Addr().String())
 	wg.Wait()
 	return nil
 }

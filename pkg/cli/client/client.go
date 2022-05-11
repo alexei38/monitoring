@@ -62,6 +62,7 @@ func Run() error {
 			}
 			drawLoadTable(resp.Load)
 			drawCPUTable(resp.CPU)
+			drawIOTable(resp.IOStat)
 		}
 	}()
 	<-ctx.Done()
@@ -133,18 +134,46 @@ func drawCPUTable(metrics []*pb.CPUMetric) {
 	ui.Render(table)
 }
 
+func drawIOTable(metrics []*pb.IOMetric) {
+	if metrics == nil {
+		return
+	}
+	sort.Slice(metrics, func(i, j int) bool {
+		return metrics[i].Device < metrics[j].Device
+	})
+	header := []string{"device", "rkb/s", "wkb/s", "util%"}
+
+	table := widgets.NewTable()
+	table.Title = "IO Load"
+	table.Rows = [][]string{header}
+
+	for _, metric := range metrics {
+		row := []string{
+			metric.Device,
+			fmt.Sprintf("%.2f", metric.Rkbs),
+			fmt.Sprintf("%.2f", metric.Wkbs),
+			fmt.Sprintf("%.2f %%", metric.Util),
+		}
+		table.Rows = append(table.Rows, row)
+	}
+
+	table.TextAlignment = ui.AlignCenter
+	table.TextStyle = ui.NewStyle(ui.ColorWhite)
+	table.SetRect(0, len(table.Rows)*4, len(header)*15, 16)
+	ui.Render(table)
+}
+
 func MonitoringClient(ctx context.Context, hostPort string, interval, counter int32) (pb.StreamService_FetchResponseClient, error) { // nolint:lll
 	credentials := grpc.WithTransportCredentials(insecure.NewCredentials())
 	conn, err := grpc.DialContext(ctx, hostPort, credentials)
 	if err != nil {
-		fmt.Println(err)
 		return nil, fmt.Errorf("failed connect to server %s: %w", hostPort, err)
 	}
+	client := pb.NewStreamServiceClient(conn)
 	go func() {
 		defer conn.Close()
 		<-ctx.Done()
 	}()
-	client := pb.NewStreamServiceClient(conn)
 
 	in := &pb.ClientRequest{
 		Interval: interval,

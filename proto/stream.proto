@@ -15,6 +15,7 @@ message ClientRequest {
 message Metrics {
   repeated CPUMetric CPU = 1;
   LoadMetric load = 2;
+  repeated IOMetric IOStat = 3;
 }
 
 message CPUMetric {
@@ -28,4 +29,11 @@ message LoadMetric {
   float load1 = 1;
   float load5 = 2;
   float load15 = 3;
+}
+
+message IOMetric {
+  string Device = 1;
+  float rkbs = 2;
+  float wkbs = 3;
+  float util = 4;
 }

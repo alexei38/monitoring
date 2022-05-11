@@ -38,9 +38,6 @@ lint: install-lint-deps
 	$(shell go env GOPATH)/bin/golangci-lint run ./...
 
 generate:
-	protoc -I ./proto \
-			--go_out ./internal/grpc \
-			--go-grpc_out ./internal/grpc \
-			./proto/*.proto
+	go generate ./...
 
 .PHONY: build run build-img run-img version test lint

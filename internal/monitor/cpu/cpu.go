@@ -58,12 +58,7 @@ func AvgStat(ctx context.Context, ch chan<- *cpu.Stats, interval int, counter in
 		default:
 			err := stat.Get()
 			if err != nil {
-				if store.Len() >= counter {
-					log.Errorf("send cpu metrics with failed failed get cpu statistic: %v", err)
-					ch <- avgCPU(store)
-				} else {
-					log.Errorf("failed get cpu statistic: %v", err)
-				}
+				log.Errorf("failed get cpu statistic: %v", err)
 				continue
 			}
 
@@ -77,7 +72,7 @@ func AvgStat(ctx context.Context, ch chan<- *cpu.Stats, interval int, counter in
 					case ch <- avgCPU(store):
 						break
 					case <-ctx.Done():
-						log.Warning("Cancel send cpu load metric")
+						log.Info("Cancel send cpu load metric")
 						return
 					}
 					iter = 0

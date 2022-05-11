@@ -45,9 +45,6 @@ func AvgStat(ctx context.Context, ch chan<- *load.Stats, interval int, counter i
 			err := stat.Get()
 			if err != nil {
 				log.Errorf("failed get loadaverage: %v", err)
-				if store.Len() >= counter {
-					ch <- avgLoad(store)
-				}
 				continue
 			}
 			if store.Len() >= counter && store.Len() > 0 {

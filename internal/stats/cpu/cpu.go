@@ -32,23 +32,25 @@ type Stats struct {
 
 func (s *Stats) Get() error {
 	s.clear()
-	mstat := &mpStat{}
+	mpstat := &mpStat{}
 	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 	cmd := exec.Command("mpstat", "-P", "ALL", "1", "1", "-o", "JSON")
 	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed run mpstat: %w", err)
 	}
-	if err := json.Unmarshal(stdout.Bytes(), mstat); err != nil {
+	if err := json.Unmarshal(stdout.Bytes(), mpstat); err != nil {
 		return fmt.Errorf("failed parse mpstat output: %w", err)
 	}
-	if len(mstat.Sysstat.Hosts) < 1 {
+	if len(mpstat.Sysstat.Hosts) < 1 {
 		return fmt.Errorf("mpstat data not found. check mpstat -P ALL")
 	}
-	if len(mstat.Sysstat.Hosts) > 1 {
+	if len(mpstat.Sysstat.Hosts) > 1 {
 		return fmt.Errorf("unsuported multiple hosts")
 	}
-	for _, res := range mstat.Sysstat.Hosts[0].Statistics {
+	for _, res := range mpstat.Sysstat.Hosts[0].Statistics {
 		s.CPU = append(s.CPU, res.CPULoad...)
 	}
 	return nil

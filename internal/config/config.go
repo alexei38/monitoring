@@ -27,6 +27,7 @@ type LoggerConf struct {
 type Metrics struct {
 	CPU  bool
 	Load bool
+	IO   bool
 }
 
 // NewConfig read configs and return Config
@@ -39,11 +40,12 @@ type Metrics struct {
 func NewConfig() (*Config, error) {
 	config := &Config{
 		Logger: LoggerConf{
-			Level: "INFO",
+			Level: "DEBUG",
 		},
 		Metrics: Metrics{
 			CPU:  true,
 			Load: true,
+			IO:   true,
 		},
 		Listen: ListenConfig{
 			Host: "127.0.0.1",
