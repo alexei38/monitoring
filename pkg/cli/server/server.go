@@ -117,7 +117,7 @@ func MonitoringServer(ctx context.Context, cancel context.CancelFunc, wg *sync.W
 			break
 		}
 		cancel()
-		log.Infof("Gracefull stopping server")
+		log.Infof("graceful shutdown")
 		gSrv.GracefulStop()
 	}()
 	return lis, nil
@@ -130,7 +130,7 @@ func Run() error {
 	}
 	err = logger.New(cfg.Logger)
 	if err != nil {
-		return fmt.Errorf("failed initialize logger: %v", err)
+		return fmt.Errorf("failed initialize logger: %w", err)
 	}
 
 	wg := &sync.WaitGroup{}

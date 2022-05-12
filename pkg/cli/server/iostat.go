@@ -8,8 +8,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Пропускаем линтер, т.к. длинные имена аргументов у grpc
-// nolint:lll
 func sendIOStat(ctx context.Context, ch <-chan *iostat.Stats, srv pb.StreamService_FetchResponseServer) {
 	for {
 		select {
