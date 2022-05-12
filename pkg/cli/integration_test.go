@@ -93,38 +93,38 @@ func TestGRPCMetrics(t *testing.T) {
 			count:  2, // по count метрик каждого типа
 			expect: 6, // сума всех метрик
 		},
-		// {
-		// 	name: "load metric only",
-		// 	cfg: &config.Config{
-		// 		Listen: config.ListenConfig{
-		// 			Host: "127.0.0.1",
-		// 			Port: "0",
-		// 		},
-		// 		Metrics: config.Metrics{
-		// 			CPU:  false,
-		// 			Load: true,
-		// 			IO:   false,
-		// 		},
-		// 	},
-		// 	count:  2,
-		// 	expect: 2, // только load метрики - 2
-		// },
-		// {
-		// 	name: "no metrics",
-		// 	cfg: &config.Config{
-		// 		Listen: config.ListenConfig{
-		// 			Host: "127.0.0.1",
-		// 			Port: "0",
-		// 		},
-		// 		Metrics: config.Metrics{
-		// 			CPU:  false,
-		// 			Load: false,
-		// 			IO:   false,
-		// 		},
-		// 	},
-		// 	count:  0,
-		// 	expect: 0, // не должны набрать ни одной метрики
-		// },
+		{
+			name: "load metric only",
+			cfg: &config.Config{
+				Listen: config.ListenConfig{
+					Host: "127.0.0.1",
+					Port: "0",
+				},
+				Metrics: config.Metrics{
+					CPU:  false,
+					Load: true,
+					IO:   false,
+				},
+			},
+			count:  2,
+			expect: 2, // только load метрики - 2
+		},
+		{
+			name: "no metrics",
+			cfg: &config.Config{
+				Listen: config.ListenConfig{
+					Host: "127.0.0.1",
+					Port: "0",
+				},
+				Metrics: config.Metrics{
+					CPU:  false,
+					Load: false,
+					IO:   false,
+				},
+			},
+			count:  0,
+			expect: 0, // не должны набрать ни одной метрики
+		},
 	}
 	for _, tc := range tests {
 		tc := tc
@@ -165,13 +165,13 @@ func TestGRPCMetrics(t *testing.T) {
 				// Проверка, что каждой метрики набрали по количеству count
 				var results []bool
 				if tc.cfg.Metrics.CPU {
-					results = append(results, atomic.LoadInt32(&metrics.cpuMetrics) >= tc.count)
+					results = append(results, atomic.LoadInt32(&metrics.cpuMetrics) == tc.count)
 				}
 				if tc.cfg.Metrics.Load {
-					results = append(results, atomic.LoadInt32(&metrics.loadMetrics) >= tc.count)
+					results = append(results, atomic.LoadInt32(&metrics.loadMetrics) == tc.count)
 				}
 				if tc.cfg.Metrics.IO {
-					results = append(results, atomic.LoadInt32(&metrics.ioMetrics) >= tc.count)
+					results = append(results, atomic.LoadInt32(&metrics.ioMetrics) == tc.count)
 				}
 				for _, result := range results {
 					if !result {
