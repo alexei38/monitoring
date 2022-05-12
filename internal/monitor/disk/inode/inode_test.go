@@ -35,12 +35,9 @@ func TestDiskUsageMetric(t *testing.T) {
 		require.NotEmpty(t, s.Mount)
 		require.NotEmpty(t, s.Device)
 		require.NotEmpty(t, s.TypeFS)
-		if s.TypeFS == "devtmpfs" || s.TypeFS == "tmpfs" || s.TypeFS == "squashfs" {
-			require.GreaterOrEqual(t, s.Available, int64(0))
-			require.GreaterOrEqual(t, s.Used, int64(0))
-		} else {
-			require.Greater(t, s.Available, int64(0))
-			require.Greater(t, s.Used, int64(0))
-		}
+		require.GreaterOrEqual(t, s.Available, int64(0))
+		require.GreaterOrEqual(t, s.Used, int64(0))
+		require.GreaterOrEqual(t, s.Available, int64(0))
+		require.GreaterOrEqual(t, s.Used, int64(0))
 	}
 }
