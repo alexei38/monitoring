@@ -27,7 +27,7 @@ func avgLoad(store memory.Storage) *load.Stats {
 	return result
 }
 
-func AvgStat(ctx context.Context, ch chan<- *load.Stats, interval int, counter int) {
+func AvgStat(ctx context.Context, log *log.Entry, ch chan<- *load.Stats, interval int, counter int) {
 	var iter int
 	store := memory.NewStorage()
 	tickerSec := time.NewTicker(time.Second)
@@ -35,34 +35,41 @@ func AvgStat(ctx context.Context, ch chan<- *load.Stats, interval int, counter i
 	for {
 		select {
 		case <-ctx.Done():
+			log.Info("stop collect")
 			return
 		default:
 		}
 		select {
 		case <-ctx.Done():
+			log.Info("stop collect")
 			return
 		case <-tickerSec.C:
 			err := stat.Get()
 			if err != nil {
-				log.Errorf("failed get loadaverage: %v", err)
+				log.Errorf("failed get metric: %v", err)
 				continue
 			}
 			if store.Len() >= counter && store.Len() > 0 {
+				log.Debug("remove last metric from storage")
 				store.Remove(store.Back())
 			}
+			log.Debugf("save metric to store: {%v}", stat)
 			store.PushFront(stat)
 			if store.Len() >= counter-interval {
-				if iter == interval {
+				if iter+1 == interval {
 					select {
 					case ch <- avgLoad(store):
+						log.Debugf("send to channel")
 						break
 					case <-ctx.Done():
-						log.Warning("Cancel send load average metric")
+						log.Info("stop collect")
 						return
 					}
 					iter = 0
+				} else {
+					log.Debugf("continue waiting interval")
+					iter++
 				}
-				iter++
 			}
 		}
 	}

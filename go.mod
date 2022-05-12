@@ -3,6 +3,7 @@ module github.com/alexei38/monitoring
 go 1.17
 
 require (
+	github.com/dustin/go-humanize v1.0.0
 	github.com/gizak/termui/v3 v3.1.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.4.0

@@ -7,8 +7,11 @@ import (
 	"io"
 	"net"
 	"sort"
+	"strconv"
+	"strings"
 
 	pb "github.com/alexei38/monitoring/internal/grpc"
+	"github.com/dustin/go-humanize"
 	ui "github.com/gizak/termui/v3"
 	"github.com/gizak/termui/v3/widgets"
 	log "github.com/sirupsen/logrus"
@@ -47,6 +50,17 @@ func Run() error {
 	if err != nil {
 		return err
 	}
+	recieveData(cancel, stream)
+	<-ctx.Done()
+	return nil
+}
+
+func recieveData(cancel context.CancelFunc, stream pb.StreamService_FetchResponseClient) {
+	drawLoadTable(nil)
+	drawCPUTable(nil)
+	drawIOTable(nil)
+	drawDiskUsageTable(nil)
+	drawDiskInodeTable(nil)
 	go func() {
 		for {
 			resp, err := stream.Recv()
@@ -60,27 +74,36 @@ func Run() error {
 				cancel()
 				return
 			}
-			drawLoadTable(resp.Load)
-			drawCPUTable(resp.CPU)
-			drawIOTable(resp.IOStat)
+			if resp.Load != nil {
+				drawLoadTable(resp.Load)
+			}
+			if resp.CPU != nil {
+				drawCPUTable(resp.CPU)
+			}
+			if resp.IOStat != nil {
+				drawIOTable(resp.IOStat)
+			}
+			if resp.DiskUsage != nil {
+				drawDiskUsageTable(resp.DiskUsage)
+			}
+			if resp.DiskInode != nil {
+				drawDiskInodeTable(resp.DiskInode)
+			}
 		}
 	}()
-	<-ctx.Done()
-	return nil
 }
 
 func drawLoadTable(metrics *pb.LoadMetric) {
-	if metrics == nil {
-		return
-	}
 	table := widgets.NewTable()
 	table.Rows = [][]string{
 		{"LA 1min", "LA 5min", "LA 15min"},
-		{
+	}
+	if metrics != nil {
+		table.Rows = append(table.Rows, []string{
 			fmt.Sprintf("%.2f %%", metrics.Load1),
 			fmt.Sprintf("%.2f %%", metrics.Load5),
 			fmt.Sprintf("%.2f %%", metrics.Load15),
-		},
+		})
 	}
 	table.Title = "Load Average"
 	table.TextAlignment = ui.AlignCenter
@@ -90,54 +113,28 @@ func drawLoadTable(metrics *pb.LoadMetric) {
 }
 
 func drawCPUTable(metrics []*pb.CPUMetric) {
-	if metrics == nil {
-		return
-	}
 	sort.Slice(metrics, func(i, j int) bool {
 		return metrics[i].CPU < metrics[j].CPU
 	})
-	cpuData := make(map[string]map[string]float32)
-	header := []string{""}
-	for _, metric := range metrics {
-		var cpuName string
-		if metric.CPU == "all" {
-			cpuName = "AVG"
-		} else {
-			cpuName = fmt.Sprintf("CPU %s", metric.CPU)
-		}
-		header = append(header, cpuName)
-		cpuData[cpuName] = map[string]float32{
-			"user":   metric.User,
-			"system": metric.System,
-			"idle":   metric.Idle,
-		}
-	}
 	table := widgets.NewTable()
 	table.Title = "CPU Load"
+	header := []string{"CPU", "User", "System", "Idle"}
 	table.Rows = [][]string{header}
-
-	for _, loadType := range []string{"user", "system", "idle"} {
-		var row []string
-		for _, cpuName := range header {
-			if cpuName == "" {
-				row = append(row, loadType)
-			} else {
-				row = append(row, fmt.Sprintf("%.2f %%", cpuData[cpuName][loadType]))
-			}
-		}
-		table.Rows = append(table.Rows, row)
+	for _, metric := range metrics {
+		table.Rows = append(table.Rows, []string{
+			metric.CPU,
+			fmt.Sprintf("%.2f %%", metric.User),
+			fmt.Sprintf("%.2f %%", metric.System),
+			fmt.Sprintf("%.2f %%", metric.Idle),
+		})
 	}
-
 	table.TextAlignment = ui.AlignCenter
 	table.TextStyle = ui.NewStyle(ui.ColorWhite)
-	table.SetRect(0, len(table.Rows)*4, len(header)*10, 5)
+	table.SetRect(0, 26, 45, 5)
 	ui.Render(table)
 }
 
 func drawIOTable(metrics []*pb.IOMetric) {
-	if metrics == nil {
-		return
-	}
 	sort.Slice(metrics, func(i, j int) bool {
 		return metrics[i].Device < metrics[j].Device
 	})
@@ -148,6 +145,9 @@ func drawIOTable(metrics []*pb.IOMetric) {
 	table.Rows = [][]string{header}
 
 	for _, metric := range metrics {
+		if strings.Contains(metric.Device, "loop") {
+			continue
+		}
 		row := []string{
 			metric.Device,
 			fmt.Sprintf("%.2f", metric.Rkbs),
@@ -159,7 +159,64 @@ func drawIOTable(metrics []*pb.IOMetric) {
 
 	table.TextAlignment = ui.AlignCenter
 	table.TextStyle = ui.NewStyle(ui.ColorWhite)
-	table.SetRect(0, len(table.Rows)*4, len(header)*15, 16)
+	table.SetRect(0, 26, 45, 40)
+	ui.Render(table)
+}
+
+func drawDiskUsageTable(metrics []*pb.DiskUsageMetric) {
+	sort.Slice(metrics, func(i, j int) bool {
+		return metrics[i].Device < metrics[j].Device
+	})
+	header := []string{"device", "all", "used", "available", "mountpoint"}
+
+	table := widgets.NewTable()
+	table.Title = "Disk Usage"
+	table.TextAlignment = ui.AlignCenter
+	table.TextStyle = ui.NewStyle(ui.ColorWhite)
+	table.SetRect(46, 0, 150, 15)
+	table.Rows = [][]string{header}
+
+	for _, metric := range metrics {
+		if metric.Typefs == "devtmpfs" || metric.Typefs == "tmpfs" || metric.Typefs == "squashfs" {
+			continue
+		}
+		table.Rows = append(table.Rows, []string{
+			metric.Device,
+			humanize.Bytes(uint64(metric.Available + metric.Used)),
+			humanize.Bytes(uint64(metric.Available)),
+			humanize.Bytes(uint64(metric.Used)),
+			metric.Mount,
+		})
+	}
+	ui.Render(table)
+}
+
+func drawDiskInodeTable(metrics []*pb.DiskInodeMetric) {
+	sort.Slice(metrics, func(i, j int) bool {
+		return metrics[i].Device < metrics[j].Device
+	})
+	header := []string{"device", "count", "used", "available", "mountpoint"}
+
+	table := widgets.NewTable()
+	table.Title = "Disk Inode"
+	table.Rows = [][]string{header}
+
+	for _, metric := range metrics {
+		if metric.Typefs == "devtmpfs" || metric.Typefs == "tmpfs" || metric.Typefs == "squashfs" {
+			continue
+		}
+		table.Rows = append(table.Rows, []string{
+			metric.Device,
+			strconv.Itoa(int(metric.Available + metric.Used)),
+			strconv.Itoa(int(metric.Available)),
+			strconv.Itoa(int(metric.Used)),
+			metric.Mount,
+		})
+	}
+
+	table.TextAlignment = ui.AlignCenter
+	table.TextStyle = ui.NewStyle(ui.ColorWhite)
+	table.SetRect(46, 15, 150, 35)
 	ui.Render(table)
 }
 

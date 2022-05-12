@@ -29,7 +29,7 @@ version: build
 	$(BIN) --version
 
 test:
-	go test -timeout 20m -count 100 -race ./...
+	go test -timeout 30m -count 50 -race ./...
 
 install-lint-deps:
 	(which golangci-lint > /dev/null) || curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell go env GOPATH)/bin v1.41.1

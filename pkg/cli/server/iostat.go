@@ -8,7 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func sendIOStat(ctx context.Context, ch <-chan *iostat.Stats, srv pb.StreamService_FetchResponseServer) {
+func sendIOStat(ctx context.Context, log *log.Entry, ch <-chan *iostat.Stats, srv pb.StreamService_FetchResponseServer) { // nolint: lll
 	for {
 		select {
 		case <-ctx.Done():
@@ -28,8 +28,7 @@ func sendIOStat(ctx context.Context, ch <-chan *iostat.Stats, srv pb.StreamServi
 					Util:   stat.Util,
 				})
 			}
-			// TODO CLIENT
-			log.Infof("send iostat metric (%v) to client %s", metrics.IOStat, "client")
+			log.Info("send metric to client")
 			if err := srv.Send(&metrics); err != nil {
 				log.Info("Connection closed")
 				return

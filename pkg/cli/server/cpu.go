@@ -8,7 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func sendCPUStat(ctx context.Context, ch <-chan *cpu.Stats, srv pb.StreamService_FetchResponseServer) {
+func sendCPUStat(ctx context.Context, log *log.Entry, ch <-chan *cpu.Stats, srv pb.StreamService_FetchResponseServer) { // nolint: lll
 	for {
 		select {
 		case <-ctx.Done():
@@ -28,8 +28,7 @@ func sendCPUStat(ctx context.Context, ch <-chan *cpu.Stats, srv pb.StreamService
 					Idle:   stat.Idle,
 				})
 			}
-			// TODO CLIENT
-			log.Infof("send cpuload metric (%v) to client %s", metrics.CPU, "client")
+			log.Info("send metric to client")
 			if err := srv.Send(&metrics); err != nil {
 				log.Info("Connection closed")
 				return

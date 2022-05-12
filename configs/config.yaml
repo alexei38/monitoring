@@ -6,5 +6,7 @@ metrics:
   cpu: true
   load: true
   io: true
+  diskUsage: true
+  diskInode: true
 logger:
   level: DEBUG

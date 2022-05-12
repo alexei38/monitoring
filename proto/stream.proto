@@ -16,6 +16,8 @@ message Metrics {
   repeated CPUMetric CPU = 1;
   LoadMetric load = 2;
   repeated IOMetric IOStat = 3;
+  repeated DiskUsageMetric DiskUsage = 4;
+  repeated DiskInodeMetric DiskInode = 5;
 }
 
 message CPUMetric {
@@ -29,6 +31,22 @@ message LoadMetric {
   float load1 = 1;
   float load5 = 2;
   float load15 = 3;
+}
+
+message DiskUsageMetric {
+  string device = 1;
+  string mount = 2;
+  string typefs = 3;
+  int64 used = 4;
+  int64 available = 5;
+}
+
+message DiskInodeMetric {
+  string device = 1;
+  string mount = 2;
+  string typefs = 3;
+  int64 used = 4;
+  int64 available = 5;
 }
 
 message IOMetric {

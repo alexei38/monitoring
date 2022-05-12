@@ -25,9 +25,11 @@ type LoggerConf struct {
 }
 
 type Metrics struct {
-	CPU  bool
-	Load bool
-	IO   bool
+	CPU       bool
+	Load      bool
+	IO        bool
+	DiskUsage bool
+	DiskInode bool
 }
 
 // NewConfig read configs and return Config
@@ -43,9 +45,11 @@ func NewConfig() (*Config, error) {
 			Level: "DEBUG",
 		},
 		Metrics: Metrics{
-			CPU:  true,
-			Load: true,
-			IO:   true,
+			CPU:       true,
+			Load:      true,
+			IO:        true,
+			DiskUsage: true,
+			DiskInode: true,
 		},
 		Listen: ListenConfig{
 			Host: "127.0.0.1",

@@ -7,6 +7,7 @@ import (
 
 	miostat "github.com/alexei38/monitoring/internal/monitor/iostat"
 	siostat "github.com/alexei38/monitoring/internal/stats/iostat"
+	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
@@ -23,7 +24,7 @@ func TestIOMetric(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		miostat.AvgStat(ctx, statCh, interval, counter)
+		miostat.AvgStat(ctx, log.WithContext(ctx), statCh, interval, counter)
 	}()
 
 	stat := <-statCh

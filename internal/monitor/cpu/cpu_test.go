@@ -8,6 +8,7 @@ import (
 
 	mcpu "github.com/alexei38/monitoring/internal/monitor/cpu"
 	scpu "github.com/alexei38/monitoring/internal/stats/cpu"
+	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
@@ -24,7 +25,7 @@ func TestCPUMetric(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		mcpu.AvgStat(ctx, statCh, interval, counter)
+		mcpu.AvgStat(ctx, log.WithContext(ctx), statCh, interval, counter)
 	}()
 
 	stat := <-statCh

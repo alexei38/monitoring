@@ -8,7 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func sendLoadStat(ctx context.Context, ch <-chan *load.Stats, srv pb.StreamService_FetchResponseServer) {
+func sendLoadStat(ctx context.Context, log *log.Entry, ch <-chan *load.Stats, srv pb.StreamService_FetchResponseServer) { // nolint: lll
 	for {
 		select {
 		case <-ctx.Done():
@@ -23,8 +23,7 @@ func sendLoadStat(ctx context.Context, ch <-chan *load.Stats, srv pb.StreamServi
 					Load15: loadStat.Load15,
 				},
 			}
-			// TODO CLIENT
-			log.Infof("send load average metric (%v) to client %s", metrics.Load, "client")
+			log.Info("send metric to client")
 			if err := srv.Send(&metrics); err != nil {
 				log.Info("Connection closed")
 				return

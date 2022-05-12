@@ -20,9 +20,11 @@ import (
 )
 
 type Metrics struct {
-	cpuMetrics  int32
-	loadMetrics int32
-	ioMetrics   int32
+	cpuMetrics       int32
+	loadMetrics      int32
+	ioMetrics        int32
+	diskUsageMetrics int32
+	diskInodeMetrics int32
 }
 
 func (m *Metrics) Append(item *pb.Metrics) {
@@ -33,11 +35,15 @@ func (m *Metrics) Append(item *pb.Metrics) {
 		atomic.AddInt32(&m.loadMetrics, 1)
 	case item.IOStat != nil:
 		atomic.AddInt32(&m.ioMetrics, 1)
+	case item.DiskUsage != nil:
+		atomic.AddInt32(&m.diskUsageMetrics, 1)
+	case item.DiskInode != nil:
+		atomic.AddInt32(&m.diskInodeMetrics, 1)
 	}
 }
 
 func (m *Metrics) Len() int32 {
-	return m.cpuMetrics + m.loadMetrics + m.ioMetrics
+	return m.cpuMetrics + m.loadMetrics + m.ioMetrics + m.diskUsageMetrics + m.diskInodeMetrics
 }
 
 // getEvent слушает поток данных из grpc, и сохраняет результат в Metrics.
@@ -89,6 +95,9 @@ func waitMetrics(t *testing.T, cfg *config.Config, interval int32, count int32, 
 		if cfg.Metrics.IO {
 			results = append(results, atomic.LoadInt32(&metrics.ioMetrics) == count)
 		}
+		if cfg.Metrics.DiskUsage {
+			results = append(results, atomic.LoadInt32(&metrics.diskUsageMetrics) == count)
+		}
 		for _, result := range results {
 			if !result {
 				return false
@@ -120,13 +129,15 @@ func TestGRPCMetrics(t *testing.T) {
 					Port: "0",
 				},
 				Metrics: config.Metrics{
-					CPU:  true,
-					Load: true,
-					IO:   true,
+					CPU:       true,
+					Load:      true,
+					IO:        true,
+					DiskUsage: true,
+					DiskInode: true,
 				},
 			},
-			count:  2, // по count метрик каждого типа
-			expect: 6, // сумма всех метрик
+			count:  2,  // по count метрик каждого типа
+			expect: 10, // сумма всех метрик
 		},
 		{
 			name: "load metric only",
@@ -136,13 +147,33 @@ func TestGRPCMetrics(t *testing.T) {
 					Port: "0",
 				},
 				Metrics: config.Metrics{
-					CPU:  false,
-					Load: true,
-					IO:   false,
+					CPU:       false,
+					Load:      true,
+					IO:        false,
+					DiskUsage: false,
+					DiskInode: false,
 				},
 			},
 			count:  2,
 			expect: 2, // только load метрики - 2
+		},
+		{
+			name: "cpu and disk metric only",
+			cfg: &config.Config{
+				Listen: config.ListenConfig{
+					Host: "127.0.0.1",
+					Port: "0",
+				},
+				Metrics: config.Metrics{
+					CPU:       true,
+					Load:      false,
+					IO:        false,
+					DiskUsage: true,
+					DiskInode: true,
+				},
+			},
+			count:  2,
+			expect: 6, // только load метрики - 2
 		},
 		{
 			name: "no metrics",
@@ -152,9 +183,11 @@ func TestGRPCMetrics(t *testing.T) {
 					Port: "0",
 				},
 				Metrics: config.Metrics{
-					CPU:  false,
-					Load: false,
-					IO:   false,
+					CPU:       false,
+					Load:      false,
+					IO:        false,
+					DiskUsage: false,
+					DiskInode: false,
 				},
 			},
 			count:  0,
@@ -201,9 +234,11 @@ func TestGRPCMultipleClients(t *testing.T) {
 			Port: "0",
 		},
 		Metrics: config.Metrics{
-			CPU:  true,
-			Load: true,
-			IO:   true,
+			CPU:       true,
+			Load:      true,
+			IO:        true,
+			DiskUsage: true,
+			DiskInode: true,
 		},
 	}
 	wg := &sync.WaitGroup{}
@@ -216,9 +251,14 @@ func TestGRPCMultipleClients(t *testing.T) {
 
 	// Первый клиент
 	metrics1 := &Metrics{}
-	var client1Interval int32 = 1  // раз в client1Interval секунд получать метриги
-	var client1Counter int32 = 2   // агрегированные, не чаще, чем наберем метрик в store в размере client1Counter
-	var client1Expected int32 = 15 // Сколько метрик должны получить в тесте
+	var client1Interval int32 = 2     // Интервал получения метрики
+	var client1Counter int32 = 1      // Сколько метрик агрегировать
+	var client1WaitMetrics int32 = 10 // Сколько групп метрик ждем в тесте, перед остановкой клиента
+	var client1Expected int32 = 50    // Сколько в сумме всех метрик должны получить в тесте
+
+	client1Elapsed := make(chan time.Duration, 1)
+	defer close(client1Elapsed)
+
 	client1, err := client.MonitoringClient(ctx, lis.Addr().String(), client1Interval, client1Counter)
 	require.NoError(t, err)
 	wg.Add(1)
@@ -228,21 +268,25 @@ func TestGRPCMultipleClients(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
+	start := time.Now()
 	wgClient := sync.WaitGroup{}
 	wgClient.Add(1)
 	go func() {
 		defer wgClient.Done()
-		// набираем минимум по 5 метрики каждого типа
-		// т.к client2 метрики получает реже, то за одно и то же время
-		// мы должны получить разное количество времени
-		waitMetrics(t, cfg, client1Interval, 5, metrics1)
+		// набираем минимум по 10 метрики каждого типа
+		waitMetrics(t, cfg, client1Interval, client1WaitMetrics, metrics1)
+		client1Elapsed <- time.Since(start)
 	}()
 
 	// Второй клиент
 	metrics2 := &Metrics{}
-	var client2Interval int32 = 2 // В какой интервал получать метрики
-	var client2Counter int32 = 4  // как часто агрегировать метрики
-	var client2Expected int32 = 6 // Сколько метрик должны получить в тесте
+	var client2Interval int32 = 4    // Интервал получения метрики
+	var client2Counter int32 = 1     // Сколько метрик агрегировать
+	var client2WaitMetrics int32 = 5 // Сколько групп метрик ждем в тесте, перед остановкой клиента
+	var client2Expected int32 = 25   // Сколько в сумме всех метрик должны получить в тесте
+	client2Elapsed := make(chan time.Duration, 1)
+	defer close(client2Elapsed)
+
 	client2, err := client.MonitoringClient(ctx, lis.Addr().String(), client2Interval, client2Counter)
 	require.NoError(t, err)
 	wg.Add(1)
@@ -255,15 +299,20 @@ func TestGRPCMultipleClients(t *testing.T) {
 	wgClient.Add(1)
 	go func() {
 		defer wgClient.Done()
-		// набираем минимум по 2 метрики каждого типа
-		// т.к client1 метрики получает чаще, то за одно и то же время
-		// мы должны получить разное количество времени
-		waitMetrics(t, cfg, client2Interval, 2, metrics2)
+		// набираем минимум по 5 метрик каждого типа
+		waitMetrics(t, cfg, client2Interval, client2WaitMetrics, metrics2)
+		client2Elapsed <- time.Since(start)
 	}()
 	wgClient.Wait()
-
 	cancel()
 	wg.Wait()
-	require.Equal(t, metrics1.Len(), client1Expected)
-	require.Equal(t, metrics2.Len(), client2Expected)
+
+	// тест должен закончится в одну секунду
+	elapsed1 := <-client1Elapsed
+	elapsed2 := <-client2Elapsed
+	require.Equal(t, int64(elapsed1.Seconds()), int64(elapsed2.Seconds()))
+
+	// проверяем ожидаемое количество метрик
+	require.Equal(t, client1Expected, metrics1.Len())
+	require.Equal(t, client2Expected, metrics2.Len())
 }
