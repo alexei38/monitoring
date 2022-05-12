@@ -98,6 +98,9 @@ func waitMetrics(t *testing.T, cfg *config.Config, interval int32, count int32, 
 		if cfg.Metrics.DiskUsage {
 			results = append(results, atomic.LoadInt32(&metrics.diskUsageMetrics) == count)
 		}
+		if cfg.Metrics.DiskInode {
+			results = append(results, atomic.LoadInt32(&metrics.diskInodeMetrics) == count)
+		}
 		for _, result := range results {
 			if !result {
 				return false
