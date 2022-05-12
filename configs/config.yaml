@@ -1,0 +1,12 @@
+---
+listen:
+  host: 127.0.0.1
+  port: 9080
+metrics:
+  cpu: true
+  load: true
+  io: true
+  diskUsage: true
+  diskInode: true
+logger:
+  level: DEBUG

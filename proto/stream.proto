@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package protobuf;
+option go_package = "./;proto";
+
+service StreamService {
+  rpc FetchResponse (ClientRequest) returns (stream Metrics) {}
+}
+
+message ClientRequest {
+  int32 interval = 1;
+  int32 counter = 2;
+}
+
+message Metrics {
+  repeated CPUMetric CPU = 1;
+  LoadMetric load = 2;
+  repeated IOMetric IOStat = 3;
+  repeated DiskUsageMetric DiskUsage = 4;
+  repeated DiskInodeMetric DiskInode = 5;
+}
+
+message CPUMetric {
+  string CPU = 1;
+  float user = 2;
+  float system = 3;
+  float idle = 4;
+}
+
+message LoadMetric {
+  float load1 = 1;
+  float load5 = 2;
+  float load15 = 3;
+}
+
+message DiskUsageMetric {
+  string device = 1;
+  string mount = 2;
+  string typefs = 3;
+  int64 used = 4;
+  int64 available = 5;
+}
+
+message DiskInodeMetric {
+  string device = 1;
+  string mount = 2;
+  string typefs = 3;
+  int64 used = 4;
+  int64 available = 5;
+}
+
+message IOMetric {
+  string Device = 1;
+  float rkbs = 2;
+  float wkbs = 3;
+  float util = 4;
+}
